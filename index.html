@@ -523,12 +523,38 @@ async function dropTable(name) {
   try { await state.conn.query(`DROP TABLE IF EXISTS ${name}`); } catch(e) {}
 }
 
+// Yield control back to the browser so it doesn't freeze
+function yieldToBrowser() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+// Insert a chunk of mapped rows into DuckDB via a virtual CSV file
+async function flushChunk(tableName, mappedRows, schemaOrder, schemaTypes, chunkId) {
+  if (mappedRows.length === 0) return;
+  const csv = buildCsv(mappedRows, schemaOrder);
+  const tmpName = `__chunk_${tableName}_${chunkId}.csv`;
+  await state.db.registerFileText(tmpName, csv);
+  const colsSpec = schemaOrder.map(c => `'${c}':'${schemaTypes[c]}'`).join(',');
+  await state.conn.query(`
+    INSERT INTO ${tableName}
+    SELECT * FROM read_csv('${tmpName}',
+      header=true,
+      columns={${colsSpec}},
+      nullstr='',
+      sample_size=-1,
+      ignore_errors=true)
+  `);
+  await state.db.dropFile(tmpName);
+}
+
 async function loadSource(files, tableName, schemaOrder, schemaTypes, colMapperFn, progressStart, progressEnd) {
   await dropTable(tableName);
   const colsDdl = schemaOrder.map(c => `${c} ${schemaTypes[c]}`).join(', ');
   await state.conn.query(`CREATE TABLE ${tableName} (${colsDdl})`);
 
+  const CHUNK_SIZE = 10000;   // flush every 10k rows to DuckDB
   let totalRows = 0;
+  let chunkId = 0;
   const totalFiles = files.length;
   let fileIdx = 0;
 
@@ -538,8 +564,10 @@ async function loadSource(files, tableName, schemaOrder, schemaTypes, colMapperF
       progressStart + ((fileIdx-1)/totalFiles) * (progressEnd - progressStart),
       `Reading ${f.name}...`
     );
+    await yieldToBrowser();
+
     const sheets = await readFileToAOA(f);
-    const allMapped = [];
+    await yieldToBrowser();
 
     for (const aoa of sheets) {
       const hIdx = detectHeaderRow(aoa);
@@ -550,33 +578,43 @@ async function loadSource(files, tableName, schemaOrder, schemaTypes, colMapperF
       if (!mapping) {
         throw new Error(`[${f.name}] required columns not detected. Headers seen: ${rawHeaders.join(' | ')}`);
       }
+
+      let chunk = [];
+      const totalSheetRows = aoa.length - (hIdx + 1);
+
       for (let r = hIdx + 1; r < aoa.length; r++) {
         const row = aoa[r];
         if (!row || row.every(c => c === null || c === undefined || String(c).trim() === '')) continue;
+
         const rowObj = {};
         for (let c = 0; c < rawHeaders.length; c++) {
           rowObj[rawHeaders[c]] = (row[c] === undefined) ? null : row[c];
         }
-        allMapped.push(mapping(rowObj));
+        chunk.push(mapping(rowObj));
+
+        // Flush every CHUNK_SIZE rows
+        if (chunk.length >= CHUNK_SIZE) {
+          chunkId++;
+          await flushChunk(tableName, chunk, schemaOrder, schemaTypes, chunkId);
+          totalRows += chunk.length;
+          chunk = [];
+          setProgress(
+            progressStart + ((fileIdx-1)/totalFiles) * (progressEnd - progressStart) +
+              (r / aoa.length) * ((progressEnd - progressStart) / totalFiles),
+            `${tableName}: ${totalRows.toLocaleString()} rows loaded...`
+          );
+          await yieldToBrowser();
+        }
+      }
+
+      // Flush remaining rows in this sheet
+      if (chunk.length > 0) {
+        chunkId++;
+        await flushChunk(tableName, chunk, schemaOrder, schemaTypes, chunkId);
+        totalRows += chunk.length;
+        await yieldToBrowser();
       }
     }
-
-    if (allMapped.length === 0) continue;
-
-    // Load this file's rows via CSV virtual file
-    const csv = buildCsv(allMapped, schemaOrder);
-    const tmpName = `__upload_${tableName}_${fileIdx}.csv`;
-    await state.db.registerFileText(tmpName, csv);
-    await state.conn.query(`
-      INSERT INTO ${tableName}
-      SELECT * FROM read_csv('${tmpName}',
-        header=true,
-        columns={${schemaOrder.map(c => `'${c}':'${schemaTypes[c]}'`).join(',')}},
-        nullstr='',
-        sample_size=-1)
-    `);
-    await state.db.dropFile(tmpName);
-    totalRows += allMapped.length;
 
     setProgress(
       progressStart + (fileIdx/totalFiles) * (progressEnd - progressStart),
