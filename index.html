@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Category Plans Intelligence — UPC Personal Care</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<style>
+:root {
+  --bg: #0b1220; --bg-2: #111a2e; --card: #1a2340; --card-2: #202b4d;
+  --border: #2a3554; --text: #e6ecff; --muted: #8a95b8;
+  --accent: #3b82f6; --accent-2: #60a5fa;
+  --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+  --violet: #a855f7; --cyan: #06b6d4;
+}
+[data-theme="light"] {
+  --bg: #f5f7fb; --bg-2: #ffffff; --card: #ffffff; --card-2: #f8fafc;
+  --border: #e5e7eb; --text: #0f172a; --muted: #64748b;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', Tahoma, system-ui, sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+  padding: 20px; transition: background 0.3s, color 0.3s;
+}
+.header {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  border-radius: 16px; padding: 22px 28px; margin-bottom: 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  box-shadow: 0 8px 24px rgba(37,99,235,0.25);
+}
+.header-title small { display:block; font-size: 12px; opacity: 0.8; letter-spacing: 2px; margin-bottom: 4px; color: #dbeafe; }
+.header-title h1 { font-size: 24px; font-weight: 700; color: #fff; }
+.header-title p { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
+.header-controls { display: flex; gap: 10px; }
+.btn {
+  background: rgba(255,255,255,0.15); color: #fff;
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 9px 16px; border-radius: 10px; cursor: pointer;
+  font-size: 13px; font-weight: 500; transition: all 0.2s;
+}
+.btn:hover { background: rgba(255,255,255,0.25); }
+.btn-primary {
+  background: var(--accent); color: #fff; border: none;
+  padding: 12px 24px; border-radius: 10px; cursor: pointer;
+  font-size: 14px; font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-2); }
+.btn-primary:disabled { background: #475569; cursor: not-allowed; }
+
+.engine-status {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px; font-size: 13px;
+}
+.engine-status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); animation: pulse 1.5s infinite; }
+.engine-status.ready .dot { background: var(--green); animation: none; }
+.engine-status.error .dot { background: var(--red); animation: none; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.upload-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.upload-card {
+  background: var(--card); border: 2px dashed var(--border);
+  border-radius: 14px; padding: 20px 16px; text-align: center;
+  cursor: pointer; transition: all 0.25s; min-height: 140px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+.upload-card:hover:not(.disabled) { border-color: var(--accent); background: var(--card-2); transform: translateY(-2px); }
+.upload-card.has-file { border-color: var(--green); border-style: solid; background: rgba(34,197,94,0.08); }
+.upload-card.disabled { opacity: 0.5; cursor: not-allowed; }
+.upload-card .icon { font-size: 28px; margin-bottom: 8px; }
+.upload-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.upload-card .hint { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.upload-card .status { font-size: 12px; font-weight: 600; color: var(--green); margin-top: 6px; }
+.upload-card input { display: none; }
+
+.action-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+.progress {
+  flex: 1; min-width: 200px; height: 8px;
+  background: var(--card); border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border); display: none;
+}
+.progress.active { display: block; }
+.progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+.status-text { font-size: 13px; color: var(--muted); }
+
+.filters {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+.filters label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.filters select {
+  background: var(--card-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px; font-size: 13px; cursor: pointer; min-width: 130px;
+}
+
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.kpi-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px 18px; position: relative; overflow: hidden;
+}
+.kpi-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
+.kpi-card.green::before { background: var(--green); }
+.kpi-card.amber::before { background: var(--amber); }
+.kpi-card.red::before { background: var(--red); }
+.kpi-card.violet::before { background: var(--violet); }
+.kpi-card.cyan::before { background: var(--cyan); }
+.kpi-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.kpi-card .value { font-size: 26px; font-weight: 700; color: var(--text); }
+.kpi-card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.section-title { font-size: 16px; font-weight: 700; margin: 24px 0 12px 0; color: var(--text); display: flex; align-items: center; gap: 10px; }
+.section-title::before { content: ''; width: 4px; height: 20px; background: var(--accent); border-radius: 2px; }
+.section-title .badge {
+  background: linear-gradient(135deg, #f59e0b, #ef4444); color: #fff;
+  padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+}
+
+.charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+.chart-box { height: 320px; }
+
+.table-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
+.table-header h3 { font-size: 14px; font-weight: 600; }
+.table-header input, .table-header select {
+  background: var(--card-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px; font-size: 13px;
+}
+.table-header input { min-width: 200px; }
+.table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th {
+  background: var(--card-2); padding: 10px 8px; text-align: left;
+  font-weight: 600; color: var(--muted); text-transform: uppercase;
+  font-size: 10px; letter-spacing: 1px; position: sticky; top: 0;
+  border-bottom: 1px solid var(--border);
+}
+td { padding: 8px; border-bottom: 1px solid var(--border); color: var(--text); }
+tr:hover td { background: var(--card-2); }
+.badge-status { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.badge-match { background: rgba(34,197,94,0.15); color: var(--green); }
+.badge-over { background: rgba(245,158,11,0.15); color: var(--amber); }
+.badge-under { background: rgba(239,68,68,0.15); color: var(--red); }
+.badge-missing { background: rgba(107,114,128,0.15); color: var(--muted); }
+
+.empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+.empty-state .icon { font-size: 64px; margin-bottom: 16px; opacity: 0.5; }
+.empty-state h2 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
+
+.toast {
+  position: fixed; top: 20px; right: 20px;
+  background: var(--card); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: 8px;
+  padding: 12px 16px; font-size: 13px; color: var(--text);
+  z-index: 9999; opacity: 0; transition: opacity 0.3s;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3); max-width: 400px;
+}
+.toast.show { opacity: 1; }
+.toast.error { border-left-color: var(--red); }
+.toast.success { border-left-color: var(--green); }
+
+#results { display: none; }
+
+@media (max-width: 768px) {
+  .upload-grid { grid-template-columns: 1fr 1fr; }
+  .header { flex-direction: column; align-items: flex-start; gap: 12px; }
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="header">
+  <div class="header-title">
+    <small>UNITED PHARMACEUTICALS COMPANY</small>
+    <h1>Category Plans Intelligence</h1>
+    <p>Personal Care Division · APF Execution Dashboard</p>
+  </div>
+  <div class="header-controls">
+    <button class="btn" onclick="toggleTheme()">🌓 Theme</button>
+    <button class="btn" onclick="exportPNG()">📸 Export PNG</button>
+  </div>
+</div>
+
+<div class="engine-status" id="engineStatus">
+  <div class="dot"></div>
+  <span id="engineText">Loading DuckDB engine... (first load ~5 seconds)</span>
+</div>
+
+<div class="upload-grid">
+  <label class="upload-card disabled" data-source="plan" id="card-plan">
+    <div class="icon">📋</div>
+    <h3>Plan Folder</h3>
+    <div class="hint">Store_ID, Item_Code, Ranged, Qty</div>
+    <div class="hint">(Multiple files OK)</div>
+    <div class="status" id="status-plan"></div>
+    <input type="file" id="file-plan" accept=".xlsx,.xls,.csv" multiple disabled>
+  </label>
+
+  <label class="upload-card disabled" data-source="commercial" id="card-commercial">
+    <div class="icon">📊</div>
+    <h3>Commercial Plans</h3>
+    <div class="hint">oh, forecast, ranged, mdq, CREATE_ON</div>
+    <div class="hint">(Multiple files OK)</div>
+    <div class="status" id="status-commercial"></div>
+    <input type="file" id="file-commercial" accept=".xlsx,.xls,.csv" multiple disabled>
+  </label>
+
+  <label class="upload-card disabled" data-source="master" id="card-master">
+    <div class="icon">📦</div>
+    <h3>Master File</h3>
+    <div class="hint">net cost, RSP, Item Class</div>
+    <div class="hint">Brand, Channel, Available in</div>
+    <div class="status" id="status-master"></div>
+    <input type="file" id="file-master" accept=".xlsx,.xls,.csv" disabled>
+  </label>
+
+  <label class="upload-card disabled" data-source="stores" id="card-stores">
+    <div class="icon">🏬</div>
+    <h3>Stores File</h3>
+    <div class="hint">Store_ID, Store_Cluster</div>
+    <div class="hint">&nbsp;</div>
+    <div class="status" id="status-stores"></div>
+    <input type="file" id="file-stores" accept=".xlsx,.xls,.csv" disabled>
+  </label>
+</div>
+
+<div class="action-bar">
+  <button class="btn-primary" id="processBtn" onclick="processAll()" disabled>⚡ Process &amp; Analyze</button>
+  <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+  <div class="status-text" id="statusText">Waiting for engine...</div>
+</div>
+
+<div class="empty-state" id="emptyState">
+  <div class="icon">📊</div>
+  <h2>Ready to analyze</h2>
+  <p>Upload the 4 files above and click "Process &amp; Analyze"</p>
+  <p style="margin-top: 8px; font-size: 12px;">Powered by DuckDB — handles 500,000+ rows smoothly</p>
+</div>
+
+<div id="results">
+  <div class="filters">
+    <label>Cluster:</label><select id="filterCluster"><option value="">All</option></select>
+    <label>Brand:</label><select id="filterBrand"><option value="">All</option></select>
+    <label>Class:</label><select id="filterClass"><option value="">All</option></select>
+    <label>Channel:</label><select id="filterChannel"><option value="">All</option></select>
+    <button class="btn" style="background: var(--accent); border: none;" onclick="applyFilters()">Apply</button>
+    <button class="btn" style="background: var(--card-2); color: var(--text); border: 1px solid var(--border);" onclick="resetFilters()">Reset</button>
+  </div>
+
+  <div class="section-title">Executive KPIs</div>
+  <div class="kpi-grid" id="executiveKpis"></div>
+
+  <div class="section-title">
+    Plan MDQ vs System MDQ — Execution at SKU × Store
+    <span class="badge">NEW</span>
+  </div>
+  <div class="kpi-grid" id="mdqKpis"></div>
+
+  <div class="charts-row">
+    <div class="chart-card"><h3>MDQ Execution Status</h3><div class="chart-box" id="chartMdqStatus"></div></div>
+    <div class="chart-card"><h3>Plan vs System MDQ by Cluster</h3><div class="chart-box" id="chartMdqCluster"></div></div>
+    <div class="chart-card"><h3>MDQ Gap by Brand (Top 10)</h3><div class="chart-box" id="chartMdqBrand"></div></div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-header">
+      <h3>Store × SKU Execution Detail</h3>
+      <input type="text" id="tableSearch" placeholder="🔍 Search store or item..." oninput="debouncedRenderTable()">
+      <select id="tableStatusFilter" onchange="renderTable()">
+        <option value="">All statuses</option>
+        <option value="Match">Match only</option>
+        <option value="Over">System &gt; Plan</option>
+        <option value="Under">System &lt; Plan</option>
+        <option value="Missing">Missing in System</option>
+      </select>
+      <button class="btn" style="background: var(--accent); border: none;" onclick="exportTableExcel()">📥 Export Excel</button>
+    </div>
+    <div class="table-wrap">
+      <table id="detailTable">
+        <thead>
+          <tr>
+            <th>Store</th><th>Cluster</th><th>Item Code</th><th>Brand</th><th>Class</th>
+            <th>Plan MDQ</th><th>System MDQ</th><th>Gap</th><th>Gap Cost</th>
+            <th>Pharmacy OH</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div style="margin-top: 10px; font-size: 12px; color: var(--muted);" id="tableFooter"></div>
+  </div>
+
+  <div class="section-title">Category &amp; Operational View</div>
+  <div class="charts-row">
+    <div class="chart-card"><h3>OSA % by Cluster</h3><div class="chart-box" id="chartOsaCluster"></div></div>
+    <div class="chart-card"><h3>Stock Value by Brand (Top 10)</h3><div class="chart-box" id="chartStockBrand"></div></div>
+    <div class="chart-card"><h3>Over vs Short Plan Cost by Class</h3><div class="chart-box" id="chartOverShort"></div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
+const state = {
+  db: null, conn: null,
+  files: { plan: [], commercial: [], master: null, stores: null },
+  filters: { cluster: '', brand: '', class: '', channel: '' },
+  charts: {}, totalRows: 0, tableSearchTimer: null
+};
+
+// =========================================================================
+// INIT
+// =========================================================================
+async function initDuckDB() {
+  try {
+    const bundles = duckdb.getJsDelivrBundles();
+    const bundle = await duckdb.selectBundle(bundles);
+    const worker_url = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+    );
+    const worker = new Worker(worker_url);
+    const logger = new duckdb.ConsoleLogger('WARNING');
+    const db = new duckdb.AsyncDuckDB(logger, worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(worker_url);
+    const conn = await db.connect();
+    state.db = db;
+    state.conn = conn;
+
+    document.getElementById('engineStatus').classList.add('ready');
+    document.getElementById('engineText').textContent = '✓ DuckDB engine ready — can process 500k+ rows';
+
+    ['plan','commercial','master','stores'].forEach(src => {
+      document.getElementById('card-' + src).classList.remove('disabled');
+      document.getElementById('file-' + src).disabled = false;
+    });
+    document.getElementById('statusText').textContent = 'Upload the 4 files to start';
+  } catch (err) {
+    console.error(err);
+    document.getElementById('engineStatus').classList.add('error');
+    document.getElementById('engineText').textContent = '✗ Engine failed — check internet connection: ' + err.message;
+    toast('DuckDB load failed: ' + err.message, 'error');
+  }
+}
+
+// =========================================================================
+// UTILITIES
+// =========================================================================
+const fmt = {
+  num: (n) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US', {maximumFractionDigits:0}),
+  pct: (n) => (n == null || isNaN(n)) ? '—' : (Number(n) * 100).toFixed(1) + '%',
+  money: (n) => (n == null || isNaN(n)) ? '—' : 'SAR ' + Number(n).toLocaleString('en-US', {maximumFractionDigits:0})
+};
+
+function toast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+function setProgress(pct, text) {
+  const p = document.getElementById('progress');
+  const b = document.getElementById('progressBar');
+  const s = document.getElementById('statusText');
+  p.classList.add('active');
+  b.style.width = pct + '%';
+  if (text) s.textContent = text;
+  if (pct >= 100) setTimeout(() => p.classList.remove('active'), 800);
+}
+
+// =========================================================================
+// COLUMN MATCHING
+// =========================================================================
+const SYNONYMS = {
+  store_id:      ['store_id','store id','storeid','store','store_code','storecode','store code','branch','branch_id','branch id','branchid','branch code','branch_code','site','site_id','outlet','outlet_id','pharmacy','pharmacy_id','pharmacy id'],
+  item_code:     ['item_code','item code','itemcode','item','sku','sku_code','sku code','skucode','product','product_code','product code','productcode','material','material_code','mat_code','item_no','item no','itemno','item_number','item number','code','barcode','ean'],
+  ranged:        ['ranged','range','in_range','in range','is_ranged','planned','plan_flag','listed','active'],
+  qty:           ['qty','quantity','plan_qty','plan qty','planqty','mdq_qty','mdq qty','min_qty','min qty','planned_qty','planned qty','units','stock_target'],
+  oh:            ['oh','onhand','on hand','on_hand','onhand_qty','on hand qty','pharmacy_oh','pharmacy oh','pharmacyoh','stock','stock_qty','stock qty','current_stock','inventory'],
+  forecast:      ['forecast','fcst','predicted','expected_sales','expected sales','demand','projection','forecast_qty','forecast qty'],
+  mdq:           ['mdq','mdq_qty','mdq qty','system_mdq','system mdq','systemmdq','min_display','min display','mindisplay','minimum_display','min_qty','min qty','system_qty','system qty'],
+  create_on:     ['create_on','created_on','created on','createon','create on','created_date','created date','creation_date','creation date','date_created','date created','date'],
+  net_cost:      ['net cost','net_cost','netcost','cost','unit_cost','unit cost','unitcost','purchase_cost','purchase cost','price_cost'],
+  rsp:           ['rsp','retail','retail_price','retail price','retailprice','selling_price','selling price','sale_price','sale price','price','list_price'],
+  item_class:    ['item class','item_class','itemclass','class','classification','abc_class','abc class','class_code','category_class','priority'],
+  dist_channel:  ['dist. channel','dist channel','dist_channel','distchannel','distribution_channel','distribution channel','channel','sales_channel','sales channel'],
+  brand:         ['brand','brand_name','brand name','brandname','manufacturer','vendor','company','mfr'],
+  available_in:  ['available in','available_in','availablein','availability','no_of_stores','no of stores','stores_count','store_count','store count','store availability'],
+  store_cluster: ['store_cluster','store cluster','storecluster','cluster','segment','store_segment','store segment','tier','store_tier','store tier','region_cluster','oral sales cluster','sales cluster'],
+  region:        ['region','area','zone','city','territory']
+};
+
+function normalizeHeader(h) {
+  return String(h || '').trim().toLowerCase().replace(/[.\-_]+/g, ' ').replace(/\s+/g, ' ');
+}
+function similarity(a, b) {
+  a = normalizeHeader(a); b = normalizeHeader(b);
+  if (a === b) return 1.0;
+  if (a.includes(b) || b.includes(a)) return 0.85;
+  const sa = new Set(a.split('')); const sb = new Set(b.split(''));
+  let inter = 0;
+  sa.forEach(c => { if (sb.has(c)) inter++; });
+  return inter / Math.max(sa.size, sb.size);
+}
+function findColumn(headers, target) {
+  const candidates = SYNONYMS[target] || [target];
+  const hn = headers.map(h => ({orig: h, norm: normalizeHeader(h)}));
+  for (const cand of candidates) {
+    const cn = normalizeHeader(cand);
+    const found = hn.find(h => h.norm === cn);
+    if (found) return found.orig;
+  }
+  for (const cand of candidates) {
+    const cn = normalizeHeader(cand);
+    const found = hn.find(h => h.norm.includes(cn) || cn.includes(h.norm));
+    if (found) return found.orig;
+  }
+  let best = null, bestScore = 0.7;
+  for (const h of hn) {
+    for (const cand of candidates) {
+      const s = similarity(h.norm, cand);
+      if (s > bestScore) { bestScore = s; best = h.orig; }
+    }
+  }
+  return best;
+}
+
+// =========================================================================
+// FILE READING
+// =========================================================================
+function readFileToAOA(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const sheets = [];
+        for (const sn of wb.SheetNames) {
+          const sheet = wb.Sheets[sn];
+          const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false, blankrows: false });
+          if (aoa.length) sheets.push(aoa);
+        }
+        resolve(sheets);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function detectHeaderRow(aoa) {
+  for (let i = 0; i < Math.min(aoa.length, 20); i++) {
+    const row = aoa[i] || [];
+    const nonEmpty = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '').length;
+    const textCells = row.filter(c => typeof c === 'string' && String(c).trim() !== '' && isNaN(Number(c))).length;
+    if (nonEmpty >= 3 && textCells >= 2) return i;
+  }
+  return 0;
+}
+
+// =========================================================================
+// TYPE COERCION
+// =========================================================================
+function toNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  const n = Number(String(v).replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+function toStr(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+function toBool(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'boolean') return v;
+  const s = String(v).trim().toLowerCase();
+  if (['1','true','yes','y','ranged','in-plan','in plan'].includes(s)) return true;
+  if (['0','false','no','n','not ranged','not-ranged','out'].includes(s)) return false;
+  const n = Number(s);
+  if (!isNaN(n)) return n === 1;
+  return null;
+}
+
+// =========================================================================
+// CSV BUILDER + DuckDB ingestion
+// =========================================================================
+// We convert mapped rows -> CSV string -> register as virtual file -> DuckDB reads it.
+// This is ~10x faster than INSERT row-by-row and avoids JavaScript memory spikes.
+function buildCsv(rows, schemaOrder) {
+  const header = schemaOrder.join(',');
+  const lines = [header];
+  const esc = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  };
+  for (const r of rows) {
+    const line = [];
+    for (const col of schemaOrder) line.push(esc(r[col]));
+    lines.push(line.join(','));
+  }
+  return lines.join('\n');
+}
+
+async function dropTable(name) {
+  try { await state.conn.query(`DROP TABLE IF EXISTS ${name}`); } catch(e) {}
+}
+
+async function loadSource(files, tableName, schemaOrder, schemaTypes, colMapperFn, progressStart, progressEnd) {
+  await dropTable(tableName);
+  const colsDdl = schemaOrder.map(c => `${c} ${schemaTypes[c]}`).join(', ');
+  await state.conn.query(`CREATE TABLE ${tableName} (${colsDdl})`);
+
+  let totalRows = 0;
+  const totalFiles = files.length;
+  let fileIdx = 0;
+
+  for (const f of files) {
+    fileIdx++;
+    setProgress(
+      progressStart + ((fileIdx-1)/totalFiles) * (progressEnd - progressStart),
+      `Reading ${f.name}...`
+    );
+    const sheets = await readFileToAOA(f);
+    const allMapped = [];
+
+    for (const aoa of sheets) {
+      const hIdx = detectHeaderRow(aoa);
+      const rawHeaders = (aoa[hIdx] || []).map((h, i) =>
+        (h === null || h === undefined || String(h).trim() === '') ? `Col${i}` : String(h).trim()
+      );
+      const mapping = colMapperFn(rawHeaders);
+      if (!mapping) {
+        throw new Error(`[${f.name}] required columns not detected. Headers seen: ${rawHeaders.join(' | ')}`);
+      }
+      for (let r = hIdx + 1; r < aoa.length; r++) {
+        const row = aoa[r];
+        if (!row || row.every(c => c === null || c === undefined || String(c).trim() === '')) continue;
+        const rowObj = {};
+        for (let c = 0; c < rawHeaders.length; c++) {
+          rowObj[rawHeaders[c]] = (row[c] === undefined) ? null : row[c];
+        }
+        allMapped.push(mapping(rowObj));
+      }
+    }
+
+    if (allMapped.length === 0) continue;
+
+    // Load this file's rows via CSV virtual file
+    const csv = buildCsv(allMapped, schemaOrder);
+    const tmpName = `__upload_${tableName}_${fileIdx}.csv`;
+    await state.db.registerFileText(tmpName, csv);
+    await state.conn.query(`
+      INSERT INTO ${tableName}
+      SELECT * FROM read_csv('${tmpName}',
+        header=true,
+        columns={${schemaOrder.map(c => `'${c}':'${schemaTypes[c]}'`).join(',')}},
+        nullstr='',
+        sample_size=-1)
+    `);
+    await state.db.dropFile(tmpName);
+    totalRows += allMapped.length;
+
+    setProgress(
+      progressStart + (fileIdx/totalFiles) * (progressEnd - progressStart),
+      `${tableName}: ${totalRows.toLocaleString()} rows loaded`
+    );
+  }
+
+  if (totalRows === 0) throw new Error(`No rows loaded into ${tableName}`);
+  return totalRows;
+}
+
+// =========================================================================
+// FILE SELECTION HANDLERS
+// =========================================================================
+['plan','commercial','master','stores'].forEach(src => {
+  const input = document.getElementById('file-' + src);
+  const card = document.getElementById('card-' + src);
+  input.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    if (src === 'master' || src === 'stores') {
+      state.files[src] = files[0];
+      document.getElementById('status-' + src).textContent = '✓ ' + files[0].name;
+    } else {
+      state.files[src] = files;
+      document.getElementById('status-' + src).textContent = `✓ ${files.length} file(s)`;
+    }
+    card.classList.add('has-file');
+    checkReady();
+  });
+});
+
+function checkReady() {
+  const ready = state.db && state.files.plan.length > 0
+             && state.files.commercial.length > 0
+             && state.files.master && state.files.stores;
+  document.getElementById('processBtn').disabled = !ready;
+  if (ready) document.getElementById('statusText').textContent = 'Ready — click Process & Analyze';
+}
+
+// =========================================================================
+// MAIN PROCESS
+// =========================================================================
+window.processAll = async function processAll() {
+  try {
+    document.getElementById('processBtn').disabled = true;
+
+    // PLAN
+    await loadSource(
+      state.files.plan, 'plan_raw',
+      ['store_id','item_code','ranged','plan_qty'],
+      { store_id:'VARCHAR', item_code:'VARCHAR', ranged:'BOOLEAN', plan_qty:'DOUBLE' },
+      (headers) => {
+        const m = {
+          store_id: findColumn(headers,'store_id'),
+          item_code: findColumn(headers,'item_code'),
+          ranged: findColumn(headers,'ranged'),
+          qty: findColumn(headers,'qty')
+        };
+        if (!m.store_id || !m.item_code) return null;
+        return (r) => ({
+          store_id: toStr(r[m.store_id]),
+          item_code: toStr(r[m.item_code]),
+          ranged: m.ranged ? toBool(r[m.ranged]) : null,
+          plan_qty: toNum(r[m.qty]) ?? 0
+        });
+      },
+      5, 35
+    );
+
+    // COMMERCIAL
+    await loadSource(
+      state.files.commercial, 'commercial_raw',
+      ['store_id','item_code','pharmacy_oh','forecast','cp_ranged','system_mdq','create_on'],
+      { store_id:'VARCHAR', item_code:'VARCHAR', pharmacy_oh:'DOUBLE', forecast:'DOUBLE', cp_ranged:'BOOLEAN', system_mdq:'DOUBLE', create_on:'VARCHAR' },
+      (headers) => {
+        const m = {
+          store_id: findColumn(headers,'store_id'),
+          item_code: findColumn(headers,'item_code'),
+          oh: findColumn(headers,'oh'),
+          forecast: findColumn(headers,'forecast'),
+          ranged: findColumn(headers,'ranged'),
+          mdq: findColumn(headers,'mdq'),
+          create_on: findColumn(headers,'create_on')
+        };
+        if (!m.store_id || !m.item_code) return null;
+        return (r) => ({
+          store_id: toStr(r[m.store_id]),
+          item_code: toStr(r[m.item_code]),
+          pharmacy_oh: toNum(r[m.oh]) ?? 0,
+          forecast: toNum(r[m.forecast]) ?? 0,
+          cp_ranged: m.ranged ? toBool(r[m.ranged]) : null,
+          system_mdq: toNum(r[m.mdq]) ?? 0,
+          create_on: m.create_on ? toStr(r[m.create_on]) : null
+        });
+      },
+      35, 60
+    );
+
+    // MASTER
+    await loadSource(
+      [state.files.master], 'master_raw',
+      ['item_code','net_cost','rsp','item_class','dist_channel','brand','no_of_stores'],
+      { item_code:'VARCHAR', net_cost:'DOUBLE', rsp:'DOUBLE', item_class:'VARCHAR', dist_channel:'VARCHAR', brand:'VARCHAR', no_of_stores:'INTEGER' },
+      (headers) => {
+        const m = {
+          item_code: findColumn(headers,'item_code'),
+          net_cost: findColumn(headers,'net_cost'),
+          rsp: findColumn(headers,'rsp'),
+          item_class: findColumn(headers,'item_class'),
+          dist_channel: findColumn(headers,'dist_channel'),
+          brand: findColumn(headers,'brand'),
+          available_in: findColumn(headers,'available_in')
+        };
+        if (!m.item_code) return null;
+        return (r) => ({
+          item_code: toStr(r[m.item_code]),
+          net_cost: toNum(r[m.net_cost]) ?? 0,
+          rsp: toNum(r[m.rsp]) ?? 0,
+          item_class: toStr(r[m.item_class]) ?? 'Unknown',
+          dist_channel: toStr(r[m.dist_channel]) ?? 'Unknown',
+          brand: toStr(r[m.brand]) ?? 'Unknown',
+          no_of_stores: toNum(r[m.available_in]) ?? 0
+        });
+      },
+      60, 75
+    );
+    await state.conn.query(`
+      CREATE OR REPLACE TABLE master_items AS
+      SELECT item_code, MAX(net_cost) net_cost, MAX(rsp) rsp,
+             ANY_VALUE(item_class) item_class, ANY_VALUE(dist_channel) dist_channel,
+             ANY_VALUE(brand) brand, MAX(no_of_stores) no_of_stores
+      FROM master_raw WHERE item_code IS NOT NULL GROUP BY item_code
+    `);
+
+    // STORES
+    await loadSource(
+      [state.files.stores], 'stores_raw',
+      ['store_id','store_cluster','region'],
+      { store_id:'VARCHAR', store_cluster:'VARCHAR', region:'VARCHAR' },
+      (headers) => {
+        const m = {
+          store_id: findColumn(headers,'store_id'),
+          store_cluster: findColumn(headers,'store_cluster'),
+          region: findColumn(headers,'region')
+        };
+        if (!m.store_id) return null;
+        return (r) => ({
+          store_id: toStr(r[m.store_id]),
+          store_cluster: toStr(r[m.store_cluster]) ?? 'Unassigned',
+          region: toStr(r[m.region]) ?? ''
+        });
+      },
+      75, 85
+    );
+    await state.conn.query(`
+      CREATE OR REPLACE TABLE stores AS
+      SELECT store_id, ANY_VALUE(store_cluster) store_cluster, ANY_VALUE(region) region
+      FROM stores_raw WHERE store_id IS NOT NULL GROUP BY store_id
+    `);
+
+    // MERGE
+    setProgress(90, 'Merging and calculating KPIs in DuckDB...');
+    await state.conn.query(`DROP TABLE IF EXISTS fact_merged`);
+    await state.conn.query(`
+      CREATE TABLE fact_merged AS
+      WITH plan_agg AS (
+        SELECT store_id, item_code,
+               ANY_VALUE(ranged) AS plan_ranged,
+               SUM(plan_qty) AS plan_qty
+        FROM plan_raw
+        WHERE store_id IS NOT NULL AND item_code IS NOT NULL
+        GROUP BY store_id, item_code
+      ),
+      cp_agg AS (
+        SELECT store_id, item_code,
+               SUM(pharmacy_oh) AS pharmacy_oh,
+               SUM(forecast) AS forecast,
+               ANY_VALUE(cp_ranged) AS cp_ranged,
+               SUM(system_mdq) AS system_mdq,
+               MAX(create_on) AS create_on
+        FROM commercial_raw
+        WHERE store_id IS NOT NULL AND item_code IS NOT NULL
+        GROUP BY store_id, item_code
+      ),
+      combined AS (
+        SELECT COALESCE(p.store_id, c.store_id) AS store_id,
+               COALESCE(p.item_code, c.item_code) AS item_code,
+               p.plan_ranged,
+               COALESCE(p.plan_qty, 0) AS plan_qty,
+               COALESCE(c.pharmacy_oh, 0) AS pharmacy_oh,
+               COALESCE(c.forecast, 0) AS forecast,
+               c.cp_ranged,
+               COALESCE(c.system_mdq, 0) AS system_mdq,
+               c.create_on
+        FROM plan_agg p
+        FULL OUTER JOIN cp_agg c ON p.store_id = c.store_id AND p.item_code = c.item_code
+      )
+      SELECT
+        cb.store_id, cb.item_code,
+        cb.plan_ranged, cb.plan_qty,
+        cb.pharmacy_oh, cb.forecast, cb.cp_ranged,
+        cb.system_mdq, cb.create_on,
+        COALESCE(m.net_cost, 0) AS net_cost,
+        COALESCE(m.rsp, 0) AS rsp,
+        COALESCE(m.item_class, 'Unknown') AS item_class,
+        COALESCE(m.dist_channel, 'Unknown') AS dist_channel,
+        COALESCE(m.brand, 'Unknown') AS brand,
+        COALESCE(m.no_of_stores, 0) AS no_of_stores,
+        COALESCE(s.store_cluster, 'Unassigned') AS store_cluster,
+        COALESCE(s.region, '') AS region,
+        cb.system_mdq * COALESCE(m.net_cost,0) AS mdq_cost,
+        cb.pharmacy_oh * COALESCE(m.net_cost,0) AS onhand_cost,
+        cb.pharmacy_oh - cb.system_mdq AS variation,
+        GREATEST(cb.pharmacy_oh - cb.system_mdq, 0) * COALESCE(m.net_cost,0) AS over_cost,
+        GREATEST(cb.system_mdq - cb.pharmacy_oh, 0) * COALESCE(m.net_cost,0) AS short_cost,
+        CASE WHEN cb.pharmacy_oh > 0 THEN 1 ELSE 0 END AS osa,
+        cb.plan_qty - cb.system_mdq AS mdq_gap,
+        (cb.plan_qty - cb.system_mdq) * COALESCE(m.net_cost,0) AS mdq_gap_cost,
+        CASE
+          WHEN cb.plan_qty > 0 AND cb.system_mdq > 0 AND ABS(cb.plan_qty - cb.system_mdq) < 0.001 THEN 'Match'
+          WHEN cb.plan_qty > 0 AND cb.system_mdq > cb.plan_qty THEN 'Over'
+          WHEN cb.plan_qty > 0 AND cb.system_mdq > 0 AND cb.system_mdq < cb.plan_qty THEN 'Under'
+          WHEN cb.plan_qty > 0 AND cb.system_mdq = 0 THEN 'Missing'
+          WHEN cb.plan_qty = 0 AND cb.system_mdq > 0 THEN 'Over'
+          ELSE 'Match'
+        END AS exec_status
+      FROM combined cb
+      LEFT JOIN master_items m ON cb.item_code = m.item_code
+      LEFT JOIN stores s ON cb.store_id = s.store_id
+      WHERE cb.store_id IS NOT NULL AND cb.item_code IS NOT NULL
+    `);
+
+    const cr = await state.conn.query(`SELECT COUNT(*) AS n FROM fact_merged`);
+    state.totalRows = Number(cr.toArray()[0].n);
+
+    setProgress(97, 'Rendering dashboard...');
+    await buildFilters();
+    await renderAll();
+
+    setProgress(100, `Done — ${state.totalRows.toLocaleString()} rows analyzed`);
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('results').style.display = 'block';
+    document.getElementById('processBtn').disabled = false;
+    toast(`Analyzed ${state.totalRows.toLocaleString()} rows successfully`, 'success');
+  } catch (err) {
+    console.error(err);
+    toast('Error: ' + err.message, 'error');
+    document.getElementById('statusText').textContent = 'Error: ' + err.message;
+    document.getElementById('processBtn').disabled = false;
+  }
+};
+
+// =========================================================================
+// QUERY HELPERS
+// =========================================================================
+function whereClause() {
+  const conds = ['1=1'];
+  if (state.filters.cluster) conds.push(`store_cluster = '${state.filters.cluster.replace(/'/g,"''")}'`);
+  if (state.filters.brand) conds.push(`brand = '${state.filters.brand.replace(/'/g,"''")}'`);
+  if (state.filters.class) conds.push(`item_class = '${state.filters.class.replace(/'/g,"''")}'`);
+  if (state.filters.channel) conds.push(`dist_channel = '${state.filters.channel.replace(/'/g,"''")}'`);
+  return conds.join(' AND ');
+}
+
+async function query(sql) {
+  const res = await state.conn.query(sql);
+  return res.toArray().map(r => {
+    const o = {};
+    for (const k in r) {
+      const v = r[k];
+      o[k] = typeof v === 'bigint' ? Number(v) : v;
+    }
+    return o;
+  });
+}
+
+// =========================================================================
+// FILTERS
+// =========================================================================
+async function buildFilters() {
+  const fill = async (id, field) => {
+    const rows = await query(`
+      SELECT DISTINCT ${field} AS v FROM fact_merged
+      WHERE ${field} IS NOT NULL AND ${field} NOT IN ('Unknown','Unassigned','')
+      ORDER BY ${field}
+    `);
+    const sel = document.getElementById(id);
+    sel.innerHTML = '<option value="">All</option>' + rows.map(r => `<option value="${r.v}">${r.v}</option>`).join('');
+  };
+  await fill('filterCluster', 'store_cluster');
+  await fill('filterBrand', 'brand');
+  await fill('filterClass', 'item_class');
+  await fill('filterChannel', 'dist_channel');
+}
+
+window.applyFilters = async function() {
+  state.filters = {
+    cluster: document.getElementById('filterCluster').value,
+    brand: document.getElementById('filterBrand').value,
+    class: document.getElementById('filterClass').value,
+    channel: document.getElementById('filterChannel').value
+  };
+  await renderAll();
+  toast('Filters applied');
+};
+
+window.resetFilters = async function() {
+  ['filterCluster','filterBrand','filterClass','filterChannel'].forEach(id => document.getElementById(id).value = '');
+  state.filters = { cluster: '', brand: '', class: '', channel: '' };
+  await renderAll();
+};
+
+// =========================================================================
+// RENDER
+// =========================================================================
+async function renderAll() {
+  const w = whereClause();
+  const k = (await query(`
+    SELECT
+      COUNT(DISTINCT store_id) AS stores,
+      COUNT(DISTINCT item_code) AS skus,
+      COUNT(*) AS total_rows,
+      SUM(onhand_cost) AS stock_value,
+      SUM(mdq_cost) AS mdq_cost_sum,
+      SUM(over_cost) AS over_cost,
+      SUM(short_cost) AS short_cost,
+      AVG(osa) AS osa_pct,
+      SUM(CASE WHEN osa=1 THEN 1 ELSE 0 END) AS osa_avail,
+      SUM(plan_qty) AS plan_mdq,
+      SUM(system_mdq) AS sys_mdq,
+      SUM(plan_qty - system_mdq) AS mdq_gap,
+      SUM(mdq_gap_cost) AS mdq_gap_cost,
+      SUM(CASE WHEN exec_status='Match' THEN 1 ELSE 0 END) AS match_count,
+      SUM(CASE WHEN exec_status='Over' THEN 1 ELSE 0 END) AS over_count,
+      SUM(CASE WHEN exec_status='Under' THEN 1 ELSE 0 END) AS under_count,
+      SUM(CASE WHEN exec_status='Missing' THEN 1 ELSE 0 END) AS missing_count
+    FROM fact_merged WHERE ${w}
+  `))[0];
+
+  const execPct = k.plan_mdq > 0 ? k.sys_mdq / k.plan_mdq : 0;
+  const compliancePct = k.total_rows > 0 ? k.match_count / k.total_rows : 0;
+
+  document.getElementById('executiveKpis').innerHTML = [
+    {label:'Total Stores', value:fmt.num(k.stores)},
+    {label:'Total SKUs', value:fmt.num(k.skus), cls:'cyan'},
+    {label:'Store × SKU rows', value:fmt.num(k.total_rows), cls:'violet'},
+    {label:'OSA %', value:fmt.pct(k.osa_pct), cls:'green', sub:`${fmt.num(k.osa_avail)} available`},
+    {label:'Stock Value', value:fmt.money(k.stock_value)},
+    {label:'Sum MDQ Cost', value:fmt.money(k.mdq_cost_sum), cls:'cyan'},
+    {label:'Over Plan Cost', value:fmt.money(k.over_cost), cls:'amber'},
+    {label:'Short Plan Cost', value:fmt.money(k.short_cost), cls:'red'}
+  ].map(c => `
+    <div class="kpi-card ${c.cls||''}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.sub?`<div class="sub">${c.sub}</div>`:''}
+    </div>
+  `).join('');
+
+  document.getElementById('mdqKpis').innerHTML = [
+    {label:'Plan MDQ (CatMan)', value:fmt.num(k.plan_mdq), cls:'cyan', sub:'Target set by Category Manager'},
+    {label:'System MDQ', value:fmt.num(k.sys_mdq), cls:'violet', sub:'Actual in system'},
+    {label:'Execution %', value:fmt.pct(execPct), cls: execPct>=0.95?'green':execPct>=0.8?'amber':'red', sub:'System ÷ Plan'},
+    {label:'MDQ Gap (units)', value:(k.mdq_gap>=0?'+':'')+fmt.num(k.mdq_gap), cls:k.mdq_gap>=0?'amber':'red', sub:'Plan − System'},
+    {label:'Gap Cost', value:fmt.money(k.mdq_gap_cost), cls:'red', sub:'Value at risk'},
+    {label:'Match Compliance %', value:fmt.pct(compliancePct), cls:compliancePct>=0.9?'green':'amber', sub:`${fmt.num(k.match_count)} match rows`}
+  ].map(c => `
+    <div class="kpi-card ${c.cls||''}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.sub?`<div class="sub">${c.sub}</div>`:''}
+    </div>
+  `).join('');
+
+  await renderCharts(k);
+  await renderTable();
+}
+
+function getChart(id) {
+  if (state.charts[id]) state.charts[id].dispose();
+  const c = echarts.init(document.getElementById(id));
+  state.charts[id] = c;
+  return c;
+}
+
+async function renderCharts(k) {
+  const w = whereClause();
+  const tt = { backgroundColor: '#1a2340', borderColor: '#2a3554', textStyle: { color: '#e6ecff' } };
+
+  // MDQ status donut
+  getChart('chartMdqStatus').setOption({
+    tooltip: { trigger: 'item', ...tt },
+    legend: { textStyle: { color: '#e6ecff' }, top: 0 },
+    series: [{
+      type: 'pie', radius: ['45%','70%'], center: ['50%','58%'],
+      itemStyle: { borderRadius: 6, borderColor: 'transparent', borderWidth: 2 },
+      label: { color: '#e6ecff', formatter: '{b}\n{c} ({d}%)' },
+      data: [
+        { name: 'Match', value: k.match_count, itemStyle: { color: '#22c55e' } },
+        { name: 'System > Plan', value: k.over_count, itemStyle: { color: '#f59e0b' } },
+        { name: 'System < Plan', value: k.under_count, itemStyle: { color: '#ef4444' } },
+        { name: 'Missing', value: k.missing_count, itemStyle: { color: '#6b7280' } }
+      ]
+    }]
+  });
+
+  // Plan vs System by cluster
+  const byCluster = await query(`
+    SELECT store_cluster AS key, SUM(plan_qty) AS plan_qty, SUM(system_mdq) AS system_mdq
+    FROM fact_merged WHERE ${w} GROUP BY store_cluster ORDER BY store_cluster
+  `);
+  getChart('chartMdqCluster').setOption({
+    tooltip: { trigger: 'axis', ...tt },
+    legend: { textStyle: { color: '#e6ecff' }, top: 0, data: ['Plan MDQ','System MDQ'] },
+    grid: { left: 50, right: 20, top: 40, bottom: 60, containLabel: true },
+    xAxis: { type: 'category', data: byCluster.map(r => r.key), axisLabel: { color: '#e6ecff', rotate: 20 } },
+    yAxis: { type: 'value', axisLabel: { color: '#e6ecff' }, splitLine: { lineStyle: { color: '#2a3554', type: 'dashed' } } },
+    series: [
+      { name: 'Plan MDQ', type: 'bar', data: byCluster.map(r => r.plan_qty), itemStyle: { color: '#06b6d4', borderRadius: [4,4,0,0] } },
+      { name: 'System MDQ', type: 'bar', data: byCluster.map(r => r.system_mdq), itemStyle: { color: '#a855f7', borderRadius: [4,4,0,0] } }
+    ]
+  });
+
+  // Gap by brand
+  const byBrand = await query(`
+    SELECT brand AS key, SUM(plan_qty - system_mdq) AS gap
+    FROM fact_merged WHERE ${w} AND brand != 'Unknown'
+    GROUP BY brand ORDER BY ABS(gap) DESC LIMIT 10
+  `);
+  getChart('chartMdqBrand').setOption({
+    tooltip: { trigger: 'axis', ...tt },
+    grid: { left: 100, right: 60, top: 20, bottom: 30, containLabel: true },
+    xAxis: { type: 'value', axisLabel: { color: '#e6ecff' }, splitLine: { lineStyle: { color: '#2a3554', type: 'dashed' } } },
+    yAxis: { type: 'category', data: byBrand.map(r => r.key).reverse(), axisLabel: { color: '#e6ecff' } },
+    series: [{
+      type: 'bar',
+      data: byBrand.map(r => ({
+        value: r.gap,
+        itemStyle: { color: r.gap >= 0 ? '#f59e0b' : '#ef4444', borderRadius: [0,4,4,0] }
+      })).reverse(),
+      label: { show: true, position: 'right', color: '#e6ecff', formatter: (p) => Math.round(p.value).toLocaleString() }
+    }]
+  });
+
+  // OSA by cluster
+  const osaByCluster = await query(`
+    SELECT store_cluster AS key, AVG(osa) AS avg
+    FROM fact_merged WHERE ${w} GROUP BY store_cluster ORDER BY store_cluster
+  `);
+  getChart('chartOsaCluster').setOption({
+    tooltip: { trigger: 'axis', formatter: (p) => p[0].name + ': ' + (p[0].value*100).toFixed(1) + '%', ...tt },
+    grid: { left: 50, right: 20, top: 30, bottom: 60, containLabel: true },
+    xAxis: { type: 'category', data: osaByCluster.map(r => r.key), axisLabel: { color: '#e6ecff', rotate: 20 } },
+    yAxis: { type: 'value', max: 1, axisLabel: { color: '#e6ecff', formatter: (v) => (v*100).toFixed(0)+'%' } },
+    series: [{
+      type: 'bar',
+      data: osaByCluster.map(r => ({
+        value: r.avg,
+        itemStyle: { color: r.avg >= 0.9 ? '#22c55e' : r.avg >= 0.75 ? '#f59e0b' : '#ef4444', borderRadius: [4,4,0,0] }
+      })),
+      label: { show: true, position: 'top', color: '#e6ecff', formatter: (p) => (p.value*100).toFixed(1)+'%' }
+    }]
+  });
+
+  // Stock by brand
+  const stockByBrand = await query(`
+    SELECT brand AS key, SUM(onhand_cost) AS stock FROM fact_merged
+    WHERE ${w} AND brand != 'Unknown'
+    GROUP BY brand ORDER BY stock DESC LIMIT 10
+  `);
+  getChart('chartStockBrand').setOption({
+    tooltip: { trigger: 'axis', ...tt },
+    grid: { left: 100, right: 80, top: 20, bottom: 30, containLabel: true },
+    xAxis: { type: 'value', axisLabel: { color: '#e6ecff' } },
+    yAxis: { type: 'category', data: stockByBrand.map(r => r.key).reverse(), axisLabel: { color: '#e6ecff' } },
+    series: [{
+      type: 'bar',
+      data: stockByBrand.map(r => r.stock).reverse(),
+      itemStyle: { color: '#3b82f6', borderRadius: [0,4,4,0] },
+      label: { show: true, position: 'right', color: '#e6ecff', formatter: (p) => 'SAR ' + Math.round(p.value).toLocaleString() }
+    }]
+  });
+
+  // Over/Short by class
+  const byClass = await query(`
+    SELECT item_class AS key, SUM(over_cost) AS over_c, SUM(short_cost) AS short_c
+    FROM fact_merged WHERE ${w} AND item_class != 'Unknown'
+    GROUP BY item_class ORDER BY item_class
+  `);
+  getChart('chartOverShort').setOption({
+    tooltip: { trigger: 'axis', ...tt },
+    legend: { textStyle: { color: '#e6ecff' }, top: 0, data: ['Over Plan','Short Plan'] },
+    grid: { left: 60, right: 20, top: 40, bottom: 40, containLabel: true },
+    xAxis: { type: 'category', data: byClass.map(r => r.key), axisLabel: { color: '#e6ecff' } },
+    yAxis: { type: 'value', axisLabel: { color: '#e6ecff' } },
+    series: [
+      { name: 'Over Plan', type: 'bar', stack: 'plan', data: byClass.map(r => r.over_c), itemStyle: { color: '#f59e0b' } },
+      { name: 'Short Plan', type: 'bar', stack: 'plan', data: byClass.map(r => -r.short_c), itemStyle: { color: '#ef4444' } }
+    ]
+  });
+}
+
+// =========================================================================
+// TABLE
+// =========================================================================
+window.debouncedRenderTable = function() {
+  clearTimeout(state.tableSearchTimer);
+  state.tableSearchTimer = setTimeout(renderTable, 250);
+};
+
+async function renderTable() {
+  const w = whereClause();
+  const search = document.getElementById('tableSearch').value.trim();
+  const statusFilter = document.getElementById('tableStatusFilter').value;
+  const conds = [w];
+  if (statusFilter) conds.push(`exec_status = '${statusFilter}'`);
+  if (search) {
+    const s = search.replace(/'/g, "''").toLowerCase();
+    conds.push(`(LOWER(store_id) LIKE '%${s}%' OR LOWER(item_code) LIKE '%${s}%' OR LOWER(brand) LIKE '%${s}%')`);
+  }
+
+  const totalRow = (await query(`SELECT COUNT(*) AS n FROM fact_merged WHERE ${conds.join(' AND ')}`))[0];
+  const total = Number(totalRow.n);
+
+  const rows = await query(`
+    SELECT store_id, store_cluster, item_code, brand, item_class,
+           plan_qty, system_mdq, mdq_gap, mdq_gap_cost, pharmacy_oh, exec_status
+    FROM fact_merged
+    WHERE ${conds.join(' AND ')}
+    ORDER BY
+      CASE exec_status WHEN 'Missing' THEN 0 WHEN 'Under' THEN 1 WHEN 'Over' THEN 2 ELSE 3 END,
+      ABS(mdq_gap_cost) DESC
+    LIMIT 500
+  `);
+
+  const badgeClass = { 'Match':'badge-match', 'Over':'badge-over', 'Under':'badge-under', 'Missing':'badge-missing' };
+  document.getElementById('tableBody').innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.store_id||''}</td>
+      <td>${r.store_cluster||''}</td>
+      <td>${r.item_code||''}</td>
+      <td>${r.brand||''}</td>
+      <td>${r.item_class||''}</td>
+      <td>${fmt.num(r.plan_qty)}</td>
+      <td>${fmt.num(r.system_mdq)}</td>
+      <td style="color:${r.mdq_gap>0?'#f59e0b':r.mdq_gap<0?'#ef4444':'inherit'}">${r.mdq_gap>0?'+':''}${fmt.num(r.mdq_gap)}</td>
+      <td>${fmt.money(r.mdq_gap_cost)}</td>
+      <td>${fmt.num(r.pharmacy_oh)}</td>
+      <td><span class="badge-status ${badgeClass[r.exec_status]||'badge-missing'}">${r.exec_status}</span></td>
+    </tr>
+  `).join('');
+  document.getElementById('tableFooter').textContent =
+    `Showing ${rows.length.toLocaleString()} of ${total.toLocaleString()} rows (mismatches sorted first)`;
+}
+window.renderTable = renderTable;
+
+// =========================================================================
+// EXPORT
+// =========================================================================
+window.exportTableExcel = async function() {
+  toast('Preparing Excel export...');
+  const w = whereClause();
+  const search = document.getElementById('tableSearch').value.trim();
+  const statusFilter = document.getElementById('tableStatusFilter').value;
+  const conds = [w];
+  if (statusFilter) conds.push(`exec_status = '${statusFilter}'`);
+  if (search) {
+    const s = search.replace(/'/g, "''").toLowerCase();
+    conds.push(`(LOWER(store_id) LIKE '%${s}%' OR LOWER(item_code) LIKE '%${s}%' OR LOWER(brand) LIKE '%${s}%')`);
+  }
+
+  const rows = await query(`
+    SELECT store_id AS Store_ID, store_cluster AS Cluster, region AS Region,
+           item_code AS Item_Code, brand AS Brand, item_class AS Item_Class, dist_channel AS Channel,
+           plan_qty AS Plan_MDQ_CatMan, system_mdq AS System_MDQ,
+           mdq_gap AS MDQ_Gap_Units, mdq_gap_cost AS MDQ_Gap_Cost,
+           pharmacy_oh AS Pharmacy_OH, forecast AS Forecast,
+           net_cost AS Net_Cost, rsp AS RSP, onhand_cost AS Onhand_Cost,
+           over_cost AS Over_Plan_Cost, short_cost AS Short_Plan_Cost,
+           osa AS OSA_Avail, exec_status AS Execution_Status
+    FROM fact_merged WHERE ${conds.join(' AND ')}
+    ORDER BY exec_status, store_id, item_code
+  `);
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'MDQ Execution');
+  const ts = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `MDQ_Execution_${ts}.xlsx`);
+  toast(`Exported ${rows.length.toLocaleString()} rows`, 'success');
+};
+
+window.exportPNG = async function() {
+  toast('Rendering PNG...');
+  try {
+    const body = document.body;
+    const canvas = await html2canvas(body, { backgroundColor: getComputedStyle(body).backgroundColor, scale: 1.5 });
+    const link = document.createElement('a');
+    link.download = `UPC_Dashboard_${new Date().toISOString().slice(0,10)}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast('PNG saved', 'success');
+  } catch (err) {
+    toast('PNG export failed: ' + err.message, 'error');
+  }
+};
+
+window.toggleTheme = function() {
+  const cur = document.body.getAttribute('data-theme');
+  document.body.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  if (state.totalRows > 0) renderAll();
+};
+
+// Boot
+initDuckDB();
+</script>
+
+</body>
+</html>
