@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Category Plans Intelligent Program — CPIP</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.5.0/Recharts.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#111009;color:#e8dcc8;font-family:'Segoe UI',Arial,sans-serif;}
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:#1c1813;}
+  ::-webkit-scrollbar-thumb{background:#35302a;border-radius:3px;}
+  select option{background:#1c1813;color:#e8dcc8;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState,useCallback,useMemo,useRef} = React;
+const {BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,Legend,ResponsiveContainer} = Recharts;
+
+const C={
+  bg:"#111009",card:"#1c1813",card2:"#242019",border:"#35302a",
+  gold:"#c9a96e",goldL:"#e8c99a",goldD:"#7a5c30",
+  text:"#e8dcc8",muted:"#8a7a68",danger:"#d9534f",
+  success:"#5cb85c",warn:"#e6a817",
+};
+
+const TR={
+  en:{
+    app:"Category Plans Intelligent Program",sub:"CPIP v1.0",lang:"عربي",
+    tabs:["Upload & Validate","Dashboard","Detail Table"],
+    up:{
+      plan:"Plan Files",planD:"Multiple files — Store_ID / Item_Code / Ranged / Qty",
+      comm:"Commercial Plans",commD:"Multiple files — oh / forecast / ranged / mdq / CREATE_ON / Item_Code",
+      master:"Master File",masterD:"Single file — net cost / RSP / Item Class / Dist. Channel / Brand / Available in / Item_Code",
+      store:"Store File",storeD:"Single file — Store_ID / Store_Cluster",
+      drop:"Drop files here or click to upload",
+      req:"Required columns",miss:"⚠ Missing",ok:"✓ All columns found",
+      btn:"Process & Analyze",btnLoad:"rows loaded",files:"file(s)",noFile:"No file uploaded",
+    },
+    kpi:{osa:"OSA %",mdqC:"MDQ Cost",ohS:"Onhand Stock",ohC:"Stock Cost",
+      var:"Plan Variation",osaA:"OSA Available",over:"Over Plan Cost",short:"Short Plan Cost"},
+    fil:{title:"Filters",brand:"Brand",cls:"Item Class",cluster:"Store Cluster",ch:"Channel",all:"All",reset:"Reset"},
+    ch:{osa:"OSA % by Cluster",mdq:"System MDQ vs Onhand Stock",os:"Over / Short by Brand"},
+    tbl:{title:"Merged Data Table",exp:"Export CSV",show:"Showing",of:"of",rows:"rows"},
+    noData:"Upload and process your files to view insights.",ok:"Data processed successfully!",
+  },
+  ar:{
+    app:"برنامج خطط الفئات الذكي",sub:"CPIP v1.0",lang:"English",
+    tabs:["رفع الملفات","لوحة التحكم","جدول التفاصيل"],
+    up:{
+      plan:"ملفات الخطة",planD:"ملفات متعددة — Store_ID / Item_Code / Ranged / Qty",
+      comm:"الخطط التجارية",commD:"ملفات متعددة — oh / forecast / ranged / mdq / CREATE_ON / Item_Code",
+      master:"الملف الرئيسي",masterD:"ملف واحد — net cost / RSP / Item Class / Dist. Channel / Brand / Available in / Item_Code",
+      store:"ملف المتاجر",storeD:"ملف واحد — Store_ID / Store_Cluster",
+      drop:"اسحب الملفات هنا أو انقر للرفع",
+      req:"الأعمدة المطلوبة",miss:"⚠ مفقود",ok:"✓ جميع الأعمدة موجودة",
+      btn:"معالجة وتحليل",btnLoad:"صف محمّل",files:"ملف",noFile:"لم يُرفع ملف",
+    },
+    kpi:{osa:"نسبة التوافر",mdqC:"تكلفة MDQ",ohS:"المخزون الفعلي",ohC:"تكلفة المخزون",
+      var:"تباين الخطة",osaA:"SKUs المتاحة",over:"تكلفة الزيادة",short:"تكلفة النقص"},
+    fil:{title:"الفلاتر",brand:"العلامة التجارية",cls:"فئة المنتج",cluster:"مجموعة المتاجر",ch:"قناة التوزيع",all:"الكل",reset:"إعادة ضبط"},
+    ch:{osa:"نسبة التوافر حسب المجموعة",mdq:"MDQ النظامي مقابل المخزون",os:"الزيادة / النقص حسب العلامة"},
+    tbl:{title:"جدول البيانات المدمجة",exp:"تصدير CSV",show:"عرض",of:"من",rows:"صف"},
+    noData:"ارفع الملفات وقم بالمعالجة لعرض التحليلات.",ok:"تمت المعالجة بنجاح!",
+  },
+};
+
+const REQ={
+  plan:["Store_ID","Item_Code","Ranged","Qty"],
+  comm:["oh","forecast","ranged","mdq","CREATE_ON","Item_Code"],
+  master:["net cost","RSP","Item Class","Dist. Channel","Brand","Available in","Item_Code"],
+  store:["Store_ID","Store_Cluster"],
+};
+
+const readXL=f=>new Promise((res,rej)=>{
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:"binary",cellDates:true});
+      res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""}));
+    }catch(err){rej(err);}
+  };
+  r.onerror=rej;
+  r.readAsBinaryString(f);
+});
+
+const getV=(row,...keys)=>{
+  for(const k of keys){
+    if(row[k]!==undefined&&row[k]!=="") return row[k];
+    const m=Object.keys(row).find(c=>c.toLowerCase().trim()===k.toLowerCase().trim());
+    if(m!==undefined&&row[m]!=="") return row[m];
+  }
+};
+
+const checkCols=(data,req)=>{
+  if(!data?.length) return {found:[],missing:req};
+  const cols=Object.keys(data[0]).map(c=>c.toLowerCase().trim());
+  return{
+    found:req.filter(r=>cols.includes(r.toLowerCase().trim())),
+    missing:req.filter(r=>!cols.includes(r.toLowerCase().trim())),
+  };
+};
+
+const fmt=(n,d=0)=>{
+  if(n===undefined||n===null||isNaN(n)) return "—";
+  const abs=Math.abs(n);
+  if(abs>=1e6) return (n/1e6).toFixed(1)+"M";
+  if(abs>=1e3) return (n/1e3).toFixed(1)+"K";
+  return Number(n).toFixed(d);
+};
+
+const isRanged=v=>{
+  if(v===1||v===true||v==="1") return true;
+  if(typeof v==="string"&&["yes","y","true"].includes(v.toLowerCase().trim())) return true;
+  return false;
+};
+
+const sumKey=(arr,k)=>arr.reduce((a,r)=>a+(parseFloat(r[k])||0),0);
+
+function UploadZone({type,label,desc,multi,state,onFiles,t}){
+  const [drag,setDrag]=useState(false);
+  const ref=useRef();
+  const req=REQ[type];
+  const handle=files=>onFiles(type,files,multi);
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
+      <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>{label}</div>
+      <div style={{border:`2px dashed ${drag?C.gold:C.border}`,borderRadius:10,padding:"20px 12px",
+        textAlign:"center",cursor:"pointer",transition:"all .2s",background:drag?C.card2:"transparent"}}
+        onDragOver={e=>{e.preventDefault();setDrag(true);}}
+        onDragLeave={()=>setDrag(false)}
+        onDrop={e=>{e.preventDefault();setDrag(false);handle(e.dataTransfer.files);}}
+        onClick={()=>ref.current.click()}>
+        <div style={{fontSize:24,marginBottom:6}}>📂</div>
+        <div style={{fontSize:12,color:C.muted}}>{t.up.drop}</div>
+        <div style={{fontSize:10,color:C.goldD,marginTop:4}}>{desc}</div>
+        <input ref={ref} type="file" accept=".xlsx,.xls,.csv" multiple={multi} style={{display:"none"}}
+          onChange={e=>handle(e.target.files)}/>
+      </div>
+      {state.files.length>0?(
+        <div style={{marginTop:10}}>
+          <span style={{display:"inline-block",padding:"3px 9px",borderRadius:4,fontSize:11,background:"#1a3020",color:C.success}}>
+            {state.files.length} {t.up.files} · {state.data.length.toLocaleString()} {t.up.btnLoad}
+          </span>
+          {state.valid&&(
+            <div style={{marginTop:6,fontSize:11,color:state.valid.missing.length?C.warn:C.success}}>
+              {state.valid.missing.length?`${t.up.miss}: ${state.valid.missing.join(", ")}`:t.up.ok}
+            </div>
+          )}
+        </div>
+      ):(
+        <div style={{marginTop:8,fontSize:11,color:C.muted}}>{t.up.noFile}</div>
+      )}
+      <div style={{marginTop:10}}>
+        <span style={{fontSize:10,color:C.muted}}>{t.up.req}: </span>
+        {req.map(c=>(
+          <span key={c} style={{display:"inline-block",padding:"2px 7px",borderRadius:4,fontSize:10,
+            background:C.card2,color:C.muted,margin:"2px 2px 0"}}>{c}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KCard({icon,label,value,unit,top}){
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:`3px solid ${top||C.gold}`,
+      borderRadius:12,padding:"18px 16px"}}>
+      <div style={{fontSize:20,marginBottom:6}}>{icon}</div>
+      <div style={{fontSize:26,fontWeight:700,color:top||C.gold,marginBottom:2}}>{value}{unit}</div>
+      <div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:.8}}>{label}</div>
+    </div>
+  );
+}
+
+function App(){
+  const [lang,setLang]=useState("en");
+  const t=TR[lang]; const rtl=lang==="ar";
+  const [tab,setTab]=useState(0);
+  const [fs,setFs]=useState({
+    plan:{files:[],data:[],valid:null},
+    comm:{files:[],data:[],valid:null},
+    master:{files:[],data:[],valid:null},
+    store:{files:[],data:[],valid:null},
+  });
+  const [proc,setProc]=useState(false);
+  const [pct,setPct]=useState(0);
+  const [pmsg,setPmsg]=useState("");
+  const [merged,setMerged]=useState([]);
+  const [kpis,setKpis]=useState(null);
+  const [fil,setFil]=useState({brand:"All",cls:"All",cluster:"All",ch:"All"});
+  const [pg,setPg]=useState(0);
+  const [toast,setToast]=useState(null);
+  const PG=50;
+
+  const showT=(msg,tp="ok")=>{setToast({msg,tp});setTimeout(()=>setToast(null),3500);};
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+  const onFiles=useCallback(async(type,fileList,multi)=>{
+    const arr=multi?Array.from(fileList):[fileList[0]];
+    const all=[];
+    for(const f of arr){try{const d=await readXL(f);all.push(...d);}catch(e){console.error(e);}}
+    const valid=checkCols(all,REQ[type]);
+    setFs(p=>({...p,[type]:{files:arr,data:all,valid}}));
+  },[]);
+
+  const process=useCallback(async()=>{
+    setProc(true);setPct(0);
+    setPmsg("Reading plan data…");setPct(10);await sleep(30);
+    const planD=fs.plan.data;
+    setPmsg("Building commercial lookup…");setPct(25);await sleep(30);
+    const commMap={};
+    for(const r of fs.comm.data){
+      const code=String(getV(r,"Item_Code","item_code")||"").trim();
+      if(code&&!commMap[code]) commMap[code]=r;
+    }
+    setPmsg("Building master lookup…");setPct(40);await sleep(30);
+    const masterMap={};
+    for(const r of fs.master.data){
+      const code=String(getV(r,"Item_Code","item_code")||"").trim();
+      if(code) masterMap[code]=r;
+    }
+    setPmsg("Building store cluster lookup…");setPct(55);await sleep(30);
+    const storeMap={};
+    for(const r of fs.store.data){
+      const id=String(getV(r,"Store_ID","store_id")||"").trim();
+      if(id) storeMap[id]=getV(r,"Store_Cluster","store_cluster")||"";
+    }
+    setPmsg("Merging & calculating KPIs…");setPct(65);await sleep(30);
+    const CHUNK=5000; const result=[];
+    for(let i=0;i<planD.length;i+=CHUNK){
+      for(const row of planD.slice(i,i+CHUNK)){
+        const itemCode=String(getV(row,"Item_Code","item_code")||"").trim();
+        const storeId=String(getV(row,"Store_ID","store_id")||"").trim();
+        const ranged=getV(row,"Ranged","ranged");
+        const qty=parseFloat(getV(row,"Qty","qty")||0)||0;
+        const comm=commMap[itemCode]||{};
+        const mst=masterMap[itemCode]||{};
+        const oh=parseFloat(getV(comm,"oh","OH")||0)||0;
+        const forecast=parseFloat(getV(comm,"forecast","Forecast")||0)||0;
+        const sysMdq=parseFloat(getV(comm,"mdq","MDQ")||0)||0;
+        const createOn=getV(comm,"CREATE_ON","create_on")||"";
+        const netCost=parseFloat(getV(mst,"net cost","Net Cost")||0)||0;
+        const rsp=parseFloat(getV(mst,"RSP","rsp")||0)||0;
+        const itemCls=getV(mst,"Item Class","item class")||"";
+        const channel=getV(mst,"Dist. Channel","dist. channel")||"";
+        const brand=getV(mst,"Brand","brand")||"";
+        const noStores=getV(mst,"Available in","available in")||"";
+        const cluster=storeMap[storeId]||"";
+        const mdqCost=sysMdq*netCost;
+        const ohCost=oh*netCost;
+        const variation=qty-sysMdq;
+        const osaAvail=(isRanged(ranged)&&oh>0)?1:0;
+        const overCost=variation>0?variation*netCost:0;
+        const shortCost=variation<0?Math.abs(variation)*netCost:0;
+        result.push({Store_ID:storeId,Item_Code:itemCode,Store_Cluster:cluster,Brand:brand,
+          Item_Class:itemCls,Channel:channel,Ranged:ranged,Qty:qty,Pharmacy_OH:oh,
+          System_MDQ:sysMdq,Forecast:forecast,Net_Cost:netCost,RSP:rsp,No_Of_Stores:noStores,
+          CREATE_ON:createOn,MDQ_Cost:mdqCost,OH_Cost:ohCost,Instore_Variation:variation,
+          OSA_Avail:osaAvail,Over_Plan_Cost:overCost,Short_Plan_Cost:shortCost});
+      }
+      setPct(65+Math.floor((i/planD.length)*25));await sleep(5);
+    }
+    setPmsg("Finalizing…");setPct(93);await sleep(30);
+    const rangedR=result.filter(r=>isRanged(r.Ranged));
+    const osaR=rangedR.filter(r=>r.OSA_Avail===1);
+    setKpis({
+      osaPct:rangedR.length?(osaR.length/rangedR.length)*100:0,
+      mdqCost:sumKey(result,"MDQ_Cost"),ohStock:sumKey(result,"Pharmacy_OH"),
+      ohCost:sumKey(result,"OH_Cost"),variation:sumKey(result,"Instore_Variation"),
+      osaAvail:sumKey(result,"OSA_Avail"),overPlan:sumKey(result,"Over_Plan_Cost"),
+      shortPlan:sumKey(result,"Short_Plan_Cost"),total:result.length,
+    });
+    setMerged(result);setPct(100);setProc(false);setTab(1);
+    showT(t.ok,"ok");
+  },[fs,t]);
+
+  const filteredData=useMemo(()=>{
+    if(!merged.length) return [];
+    return merged.filter(r=>{
+      if(fil.brand!=="All"&&r.Brand!==fil.brand) return false;
+      if(fil.cls!=="All"&&r.Item_Class!==fil.cls) return false;
+      if(fil.cluster!=="All"&&r.Store_Cluster!==fil.cluster) return false;
+      if(fil.ch!=="All"&&r.Channel!==fil.ch) return false;
+      return true;
+    });
+  },[merged,fil]);
+
+  const opts=useMemo(()=>{
+    const u=k=>[...new Set(merged.map(r=>r[k]).filter(Boolean))].sort();
+    return{brands:u("Brand"),classes:u("Item_Class"),clusters:u("Store_Cluster"),channels:u("Channel")};
+  },[merged]);
+
+  const fk=useMemo(()=>{
+    if(!filteredData.length) return kpis;
+    const rangedR=filteredData.filter(r=>isRanged(r.Ranged));
+    const osaR=rangedR.filter(r=>r.OSA_Avail===1);
+    return{
+      osaPct:rangedR.length?(osaR.length/rangedR.length)*100:0,
+      mdqCost:sumKey(filteredData,"MDQ_Cost"),ohStock:sumKey(filteredData,"Pharmacy_OH"),
+      ohCost:sumKey(filteredData,"OH_Cost"),variation:sumKey(filteredData,"Instore_Variation"),
+      osaAvail:sumKey(filteredData,"OSA_Avail"),overPlan:sumKey(filteredData,"Over_Plan_Cost"),
+      shortPlan:sumKey(filteredData,"Short_Plan_Cost"),total:filteredData.length,
+    };
+  },[filteredData,kpis]);
+
+  const clusterOsa=useMemo(()=>{
+    const m={};
+    for(const r of filteredData){
+      const cl=r.Store_Cluster||"?";
+      if(!m[cl]) m[cl]={name:cl,r:0,o:0};
+      if(isRanged(r.Ranged)){m[cl].r++;if(r.OSA_Avail)m[cl].o++;}
+    }
+    return Object.values(m).map(d=>({name:d.name,"OSA %":d.r?+((d.o/d.r)*100).toFixed(1):0})).slice(0,10);
+  },[filteredData]);
+
+  const mdqVsOh=useMemo(()=>{
+    const m={};
+    for(const r of filteredData){
+      const cl=r.Store_Cluster||"?";
+      if(!m[cl]) m[cl]={name:cl,MDQ:0,OH:0};
+      m[cl].MDQ+=r.System_MDQ||0;m[cl].OH+=r.Pharmacy_OH||0;
+    }
+    return Object.values(m).map(d=>({...d,MDQ:Math.round(d.MDQ),OH:Math.round(d.OH)})).slice(0,10);
+  },[filteredData]);
+
+  const overShort=useMemo(()=>{
+    const m={};
+    for(const r of filteredData){
+      const b=r.Brand||"?";
+      if(!m[b]) m[b]={name:b,Over:0,Short:0};
+      m[b].Over+=r.Over_Plan_Cost||0;m[b].Short+=r.Short_Plan_Cost||0;
+    }
+    return Object.values(m).sort((a,b)=>(b.Over+b.Short)-(a.Over+a.Short)).slice(0,8);
+  },[filteredData]);
+
+  const exportCSV=()=>{
+    if(!filteredData.length) return;
+    const h=Object.keys(filteredData[0]);
+    const csv=[h.join(","),...filteredData.map(r=>h.map(k=>JSON.stringify(r[k]??"")||"").join(","))].join("\n");
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+    a.download="CPIP_Export.csv";a.click();
+  };
+
+  const tt={contentStyle:{background:C.card2,border:`1px solid ${C.border}`,borderRadius:8,color:C.text}};
+  const g2={display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16};
+  const g4={display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20};
+  const card={background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20};
+  const btnSm={background:C.card2,color:C.gold,border:`1px solid ${C.border}`,borderRadius:6,padding:"6px 14px",cursor:"pointer",fontSize:12};
+  const sel={background:C.card2,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 10px",fontSize:12};
+  const th={padding:"9px 10px",textAlign:rtl?"right":"left",background:C.card2,color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:.5,borderBottom:`1px solid ${C.border}`};
+  const td={padding:"7px 10px",borderBottom:`1px solid ${C.border}20`,fontSize:12};
+  const canProc=fs.plan.data.length>0;
+  const tblPage=filteredData.slice(pg*PG,(pg+1)*PG);
+  const maxPg=Math.max(0,Math.ceil(filteredData.length/PG)-1);
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,color:C.text,direction:rtl?"rtl":"ltr",
+      fontFamily:rtl?"'Segoe UI',Tahoma,Arial,sans-serif":"'Inter',Arial,sans-serif"}}>
+
+      {toast&&<div style={{position:"fixed",top:16,right:rtl?undefined:16,left:rtl?16:undefined,zIndex:999,
+        background:toast.tp==="ok"?"#1a3020":"#3a1016",
+        border:`1px solid ${toast.tp==="ok"?C.success:C.danger}`,borderRadius:8,
+        padding:"10px 18px",color:toast.tp==="ok"?C.success:C.danger,fontSize:13}}>{toast.msg}</div>}
+
+      {/* Header */}
+      <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"0 24px",
+        display:"flex",alignItems:"center",justifyContent:"space-between",height:60}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,background:`linear-gradient(135deg,${C.gold},${C.goldD})`,
+            borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📊</div>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:C.gold}}>{t.app}</div>
+            <div style={{fontSize:10,color:C.muted}}>{t.sub}</div>
+          </div>
+        </div>
+        <button style={{...btnSm,padding:"7px 16px"}} onClick={()=>setLang(l=>l==="en"?"ar":"en")}>{t.lang}</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",background:C.card,borderBottom:`1px solid ${C.border}`,padding:"0 24px"}}>
+        {t.tabs.map((tb,i)=>(
+          <div key={i} style={{padding:"13px 18px",cursor:"pointer",fontSize:13,fontWeight:tab===i?600:400,
+            color:tab===i?C.gold:C.muted,borderBottom:`2px solid ${tab===i?C.gold:"transparent"}`,transition:"all .2s"}}
+            onClick={()=>setTab(i)}>{tb}</div>
+        ))}
+      </div>
+
+      <div style={{padding:20,maxWidth:1400,margin:"0 auto"}}>
+
+        {/* TAB 0 */}
+        {tab===0&&<div>
+          <div style={g2}>
+            <UploadZone type="plan" label={t.up.plan} desc={t.up.planD} multi={true} state={fs.plan} onFiles={onFiles} t={t}/>
+            <UploadZone type="comm" label={t.up.comm} desc={t.up.commD} multi={true} state={fs.comm} onFiles={onFiles} t={t}/>
+          </div>
+          <div style={g2}>
+            <UploadZone type="master" label={t.up.master} desc={t.up.masterD} multi={false} state={fs.master} onFiles={onFiles} t={t}/>
+            <UploadZone type="store" label={t.up.store} desc={t.up.storeD} multi={false} state={fs.store} onFiles={onFiles} t={t}/>
+          </div>
+          {proc?(
+            <div style={{...card,textAlign:"center"}}>
+              <div style={{fontSize:13,color:C.gold,marginBottom:10}}>{pmsg}</div>
+              <div style={{background:C.card2,borderRadius:8,height:8,overflow:"hidden"}}>
+                <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${C.goldD},${C.gold})`,transition:"width .3s"}}/>
+              </div>
+              <div style={{fontSize:12,color:C.muted,marginTop:6}}>{pct}%</div>
+            </div>
+          ):(
+            <button style={{background:`linear-gradient(135deg,${C.gold},${C.goldD})`,color:"#111",border:"none",
+              borderRadius:8,padding:"12px 0",fontWeight:700,cursor:"pointer",fontSize:14,width:"100%",
+              opacity:canProc?1:.45}} disabled={!canProc} onClick={process}>
+              {t.up.btn}{canProc?` (${fs.plan.data.length.toLocaleString()} ${t.up.btnLoad})`:""}
+            </button>
+          )}
+        </div>}
+
+        {/* TAB 1 */}
+        {tab===1&&<div>
+          {!kpis?<div style={{textAlign:"center",padding:80,color:C.muted}}>{t.noData}</div>:<>
+            <div style={{...card,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center",marginBottom:20}}>
+              <span style={{fontSize:11,color:C.muted,fontWeight:600}}>{t.fil.title}:</span>
+              {[{k:"brand",lb:t.fil.brand,os:opts.brands},{k:"cls",lb:t.fil.cls,os:opts.classes},
+                {k:"cluster",lb:t.fil.cluster,os:opts.clusters},{k:"ch",lb:t.fil.ch,os:opts.channels}].map(f=>(
+                <div key={f.k} style={{display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{fontSize:11,color:C.muted}}>{f.lb}:</span>
+                  <select style={sel} value={fil[f.k]} onChange={e=>setFil(p=>({...p,[f.k]:e.target.value}))}>
+                    <option value="All">{t.fil.all}</option>
+                    {f.os.map(o=><option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+              <button style={btnSm} onClick={()=>setFil({brand:"All",cls:"All",cluster:"All",ch:"All"})}>{t.fil.reset}</button>
+              <span style={{fontSize:11,color:C.muted,marginLeft:"auto"}}>{fk?.total?.toLocaleString()} {t.tbl.rows}</span>
+            </div>
+            <div style={g4}>
+              <KCard icon="📈" label={t.kpi.osa} value={fk?.osaPct?.toFixed(1)} unit="%" top={C.gold}/>
+              <KCard icon="📦" label={t.kpi.mdqC} value={fmt(fk?.mdqCost)} unit="" top="#8ba5c9"/>
+              <KCard icon="🏪" label={t.kpi.ohS} value={fmt(fk?.ohStock)} unit="" top="#8bc98a"/>
+              <KCard icon="💰" label={t.kpi.ohC} value={fmt(fk?.ohCost)} unit="" top="#c98ba0"/>
+              <KCard icon="↕️" label={t.kpi.var} value={fmt(fk?.variation)} unit="" top={C.muted}/>
+              <KCard icon="✅" label={t.kpi.osaA} value={fmt(fk?.osaAvail)} unit="" top={C.success}/>
+              <KCard icon="⬆️" label={t.kpi.over} value={fmt(fk?.overPlan)} unit="" top={C.warn}/>
+              <KCard icon="⬇️" label={t.kpi.short} value={fmt(fk?.shortPlan)} unit="" top={C.danger}/>
+            </div>
+            <div style={{...g2,marginBottom:20}}>
+              <div style={card}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                  <span style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1}}>{t.ch.osa}</span>
+                  <button style={btnSm} onClick={exportCSV}>{t.tbl.exp}</button>
+                </div>
+                <ResponsiveContainer width="100%" height={210}>
+                  <BarChart data={clusterOsa}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+                    <XAxis dataKey="name" tick={{fill:C.muted,fontSize:10}}/>
+                    <YAxis tick={{fill:C.muted,fontSize:10}} unit="%" domain={[0,100]}/>
+                    <Tooltip {...tt}/>
+                    <Bar dataKey="OSA %" fill={C.gold} radius={[4,4,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={card}>
+                <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:14}}>{t.ch.mdq}</div>
+                <ResponsiveContainer width="100%" height={210}>
+                  <BarChart data={mdqVsOh}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+                    <XAxis dataKey="name" tick={{fill:C.muted,fontSize:10}}/>
+                    <YAxis tick={{fill:C.muted,fontSize:10}}/>
+                    <Tooltip {...tt}/>
+                    <Legend wrapperStyle={{fontSize:11,color:C.muted}}/>
+                    <Bar dataKey="MDQ" fill="#8ba5c9" radius={[4,4,0,0]}/>
+                    <Bar dataKey="OH" fill={C.gold} radius={[4,4,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div style={{...card,marginBottom:0}}>
+              <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:14}}>{t.ch.os}</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={overShort} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+                  <XAxis type="number" tick={{fill:C.muted,fontSize:10}}/>
+                  <YAxis dataKey="name" type="category" width={110} tick={{fill:C.muted,fontSize:10}}/>
+                  <Tooltip {...tt}/>
+                  <Legend wrapperStyle={{fontSize:11}}/>
+                  <Bar dataKey="Over" fill={C.warn} radius={[0,4,4,0]}/>
+                  <Bar dataKey="Short" fill={C.danger} radius={[0,4,4,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>}
+        </div>}
+
+        {/* TAB 2 */}
+        {tab===2&&<div>
+          {!merged.length?<div style={{textAlign:"center",padding:80,color:C.muted}}>{t.noData}</div>:(
+            <div style={card}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <span style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1}}>
+                  {t.tbl.title} · {filteredData.length.toLocaleString()} {t.tbl.rows}
+                </span>
+                <button style={btnSm} onClick={exportCSV}>{t.tbl.exp}</button>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr>{["Store ID","Item Code","Cluster","Brand","Class","Channel","Ranged","Qty",
+                      "Pharmacy OH","Sys MDQ","Net Cost","RSP","MDQ Cost","OH Cost","Variation","OSA","Over Cost","Short Cost"
+                    ].map(h=><th key={h} style={th}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {tblPage.map((r,i)=>(
+                      <tr key={i} style={{background:i%2?`${C.card2}60`:"transparent"}}>
+                        <td style={td}>{r.Store_ID}</td>
+                        <td style={td}>{r.Item_Code}</td>
+                        <td style={td}>{r.Store_Cluster}</td>
+                        <td style={td}>{r.Brand}</td>
+                        <td style={td}>{r.Item_Class}</td>
+                        <td style={td}>{r.Channel}</td>
+                        <td style={{...td,color:isRanged(r.Ranged)?C.success:C.muted}}>{String(r.Ranged)}</td>
+                        <td style={td}>{r.Qty}</td>
+                        <td style={td}>{r.Pharmacy_OH}</td>
+                        <td style={td}>{r.System_MDQ}</td>
+                        <td style={td}>{r.Net_Cost?.toFixed(2)}</td>
+                        <td style={td}>{r.RSP?.toFixed(2)}</td>
+                        <td style={td}>{fmt(r.MDQ_Cost)}</td>
+                        <td style={td}>{fmt(r.OH_Cost)}</td>
+                        <td style={{...td,color:r.Instore_Variation>0?C.warn:r.Instore_Variation<0?C.danger:C.text,fontWeight:600}}>
+                          {r.Instore_Variation?.toFixed(0)}
+                        </td>
+                        <td style={{...td,color:r.OSA_Avail?C.success:C.muted}}>{r.OSA_Avail?"✓":"✗"}</td>
+                        <td style={{...td,color:C.warn}}>{fmt(r.Over_Plan_Cost)}</td>
+                        <td style={{...td,color:C.danger}}>{fmt(r.Short_Plan_Cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:14,alignItems:"center",justifyContent:"center"}}>
+                <button style={btnSm} onClick={()=>setPg(p=>Math.max(0,p-1))} disabled={pg===0}>←</button>
+                <span style={{fontSize:12,color:C.muted}}>
+                  {t.tbl.show} {pg*PG+1}–{Math.min((pg+1)*PG,filteredData.length)} {t.tbl.of} {filteredData.length.toLocaleString()}
+                </span>
+                <button style={btnSm} onClick={()=>setPg(p=>Math.min(maxPg,p+1))} disabled={pg>=maxPg}>→</button>
+              </div>
+            </div>
+          )}
+        </div>}
+
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
